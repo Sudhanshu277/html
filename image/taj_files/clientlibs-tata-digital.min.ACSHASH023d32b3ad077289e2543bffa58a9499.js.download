@@ -1,0 +1,197 @@
+
+async function getTdlSsoToken({ authCode, codeVerifier }) {
+    console.log('Logging tdl tokens', authCode, codeVerifier);
+    if(!authCode || !codeVerifier) return;
+    var req_data = {
+
+        "codeVerifier" : codeVerifier
+        }
+     $.ajax({
+    type: "POST",
+    url: "/bin/ssoTd",
+    crossDomain : true,
+    dataType: 'json',
+    data:{
+         authToken: authCode,
+         req_data : JSON.stringify(req_data)
+     }
+
+
+     }).done(function(res) {
+	  var ssoResponse = JSON.parse(res);
+	  console.log("ssoResponse", ssoResponse);
+      localStorage.setItem("access_token", ssoResponse.accessToken);
+      localStorage.setItem("refresh_token", ssoResponse.refreshToken);
+      const { firstName, lastName, email, phone, customerHash } = ssoResponse.idToken;
+      localStorage.setItem('user', JSON.stringify(ssoResponse.idToken));
+	 
+   
+   }).fail(function(res) {
+         console.log('login error:  ', res);
+
+   });
+
+
+}
+
+const getParameterByName2 = (name, url) => {
+
+    if (!url) url = window.location.href;
+    name = name.replace(/[\[\]]/g, '\\$&');
+    const regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'), results = regex.exec(url);
+    if (!results) return null;
+    if (!results[2]) return '';
+    return decodeURIComponent(results[2].replace(/\+/g, ' '));
+}
+
+const authCode = getParameterByName2('authCode');
+const codeVerifier = getParameterByName2('codeVerifier');
+
+if(authCode && codeVerifier) getTdlSsoToken({ authCode, codeVerifier });
+
+
+//window.onload = function () {
+ $(window).load(function() {                                             
+var access_tkn = localStorage.getItem("access_token");
+const refresh_tkn = localStorage.getItem("refresh_token");
+var userDetails = JSON.parse(localStorage.getItem('user')); 
+ 
+var urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has("authCode")) {
+      var auth_code = urlParams.get("authCode");
+	  var uri = window.location.toString();
+	  var clean_uri = uri.substring(0, uri.indexOf("?"));
+    window.history.replaceState({}, document.title, clean_uri);
+	currentUrl = window.location.href;
+     
+  }
+ 
+if(access_tkn != null && refresh_tkn !=null){
+	 validateAccessToken(access_tkn, userDetails, refresh_tkn);
+	
+}
+
+function upateAccessToken() {
+  console.log("call refresh token");
+  callToRefreshToken(refresh_tkn);
+
+}
+setInterval(upateAccessToken, 1800000);    //120000
+
+
+function validateAccessToken(accessTk, userdetails, refresTk) {
+console.log("inside validate token");
+
+$.ajax({
+    type: "POST",
+    url: "/bin/validateTokenTd",
+    crossDomain : true,
+    dataType: 'json',
+    data:{
+         authToken: accessTk,
+         req_data : JSON.stringify(accessTk)
+     }
+
+}).done(function(res) {
+	  console.log('login success status:  ',  res);
+	  var validateToknResp = JSON.parse(res);
+	  console.log('login success status:  ',  validateToknResp);
+      //console.log('login success status:  ',  validateToknResp.success);
+	  //if(!getUserData()){
+    if(validateToknResp == null){
+        callToRefreshToken(refresTk);
+    }
+		 else if(validateToknResp.success === "Valid access token"){
+			  getUserDetailsUsingToken(accessTk, userdetails);
+		  }
+
+
+   }).fail(function(res) {
+         console.log('login error:  ', res);
+		 var validateToknResp = JSON.parse(res);
+	  console.log('login success status:  ',  validateToknResp);
+		 if(validateToknResp.success != "Valid access token"){
+			  callToRefreshToken(refresTk);
+		  }
+        /* if(res.status === 401){
+			 if(accessTk != null && refresTk != null){
+				 	
+				  }
+
+			//	forceLogoutAfterUnauthorized();1fb81913708bbe3b35a3573c9c5bb3ac
+		  console.log("res status = "+res.responseText);				
+         }*/
+   });					
+
+}
+function callToRefreshToken(refreshTokenR) {
+	console.log("inside refresh token method");
+	 var refreshTk = {
+            refreshToken: refreshTokenR
+        }
+$.ajax({
+
+	type: "POST",
+    url: '/bin/refreshTokenTd',
+    crossDomain : true,
+    dataType: 'json',
+     data:{
+         req_data : JSON.stringify(refreshTk)
+     },
+    success: function(result) {
+        console.log(result);
+		var refreshTokenResp = JSON.parse(result);
+        console.log("new access token " +refreshTokenResp.access_token);
+        localStorage.setItem("access_token", refreshTokenResp.access_token);
+		var newAccess_token = refreshTokenResp.access_token;
+
+    },
+    error: function(error) {
+     console.log("ERROR while refreshing token");
+	  if(access_tkn != null && refresh_tkn != null){
+				  window.location.href = 'https://sit-account.tatadigital.com/?clientId='+clientID+'&redirectURL='+currentUrl;
+	  }
+
+    },
+
+});
+
+}
+function getUserDetailsUsingToken(accesstkn , userInfo) {
+
+    var cstmhash = userInfo.customerHash;
+    var req_data = {
+          "customerHash" : cstmhash
+        }
+	   $.ajax({
+           type : "POST",
+           url : '/bin/fetchTdCustomer',
+              data : {
+                req_data : JSON.stringify(req_data),
+                authToken : accesstkn
+              },
+              dataType : "json",
+
+             }).done(function(data) {
+	
+	        data = JSON.parse(data);
+			console.log("Response from fetch customer api",data);
+		  dataCache.local.setData("userDetails", data);
+	      loginSuccessHandler1(userDetails);
+
+       }).fail(function(error) {
+
+          console.log("error in fetch customer api",error);
+       });
+   }
+        function loginSuccessHandler1(user_info) {
+              //  saveUserDetails(accessToken, userDetails);
+			  console.log("inside login successfull method");
+                var name = user_info.firstName;
+				console.log("username "+name);
+            	dataToBot();
+                $('body').trigger('taj:loginSuccess', [ name ]);
+
+            } 
+
+})
